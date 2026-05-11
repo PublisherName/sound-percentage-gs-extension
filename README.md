@@ -5,4 +5,19 @@ system indicator.
 
 ![screenshot](screenshot.png)
 
+## Testing
 
+1. Install dependency
+```bash
+uv sync
+```
+
+2. Build a zip
+```bash
+./build-a-zip.sh
+```
+
+3. Check the zip
+```bash
+uv run sound-percentage@maestroschan.fr.zip
+```

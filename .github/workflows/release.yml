@@ -1,0 +1,103 @@
+name: Zip and Release
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "sound-percentage@maestroschan.fr/**"
+      - "build.sh"
+      - "pyproject.toml"
+      - "uv.lock"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "sound-percentage@maestroschan.fr/**"
+      - "build.sh"
+      - "pyproject.toml"
+      - "uv.lock"
+
+permissions:
+  contents: write
+
+jobs:
+  build-checks:
+    runs-on: ubuntu-latest
+
+    outputs:
+      release_version: ${{ steps.extract_version.outputs.release_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Extract version from metadata.json
+        id: extract_version
+        run: |
+          VERSION=$(jq -r '.version' sound-percentage@maestroschan.fr/metadata.json)
+          echo "release_version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build extension zip
+        run: ./build.sh
+
+      - name: Verify zip exists
+        run: test -f sound-percentage@maestroschan.fr.zip
+
+      - name: Run shexli (fail on findings)
+        run: |
+          set -o pipefail
+          uv run shexli sound-percentage@maestroschan.fr.zip --format json | tee shexli.json
+          result_code=${PIPESTATUS[0]}
+
+          finding_count=$(jq '.summary.finding_count' shexli.json)
+
+          if [ "$finding_count" -ne 0 ]; then
+            echo "shexli reported $finding_count finding(s); failing the build."
+            jq '.findings' shexli.json
+            exit 1
+          fi
+
+          exit $result_code
+
+      - name: Upload zip artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-zip
+          path: sound-percentage@maestroschan.fr.zip
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: build-checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Download zip artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-zip
+          path: .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build-checks.outputs.release_version }}
+          name: v${{ needs.build-checks.outputs.release_version }}
+          body: "This release was automatically generated."
+          files: sound-percentage@maestroschan.fr.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

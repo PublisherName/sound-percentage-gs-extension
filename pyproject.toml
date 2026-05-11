@@ -1,0 +1,9 @@
+[project]
+name = "sound-percentage-gs-extension"
+version = "0.1.0"
+description = "Display the current sound percentage in the top bar, next to the corresponding system indicator."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "shexli>=0.2.1",
+]
