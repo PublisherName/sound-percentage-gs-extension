@@ -6,6 +6,7 @@
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import GLib from 'gi://GLib';
 
 const STREAM_UPDATED = 'stream-updated';
 const STREAM_ADDED = 'stream-added';
@@ -16,7 +17,7 @@ export default class SoundPercentageExtension {
 	INPUT_SIGNAL_ID = undefined;
 	INPUT_STREAM_ADDED_SIGNAL_ID = undefined;
 	INPUT_STREAM_REMOVED_SIGNAL_ID = undefined;
-
+	_enableTimeoutId = undefined;
 
 	/**
 	 * Retrieves the volume input indicator from the GNOME Shell's quick settings panel.
@@ -42,7 +43,12 @@ export default class SoundPercentageExtension {
 	 * Handles errors and muted states by displaying appropriate values.
 	 */
 	updateVolume() {
-		for (const indicator of [this.getVolumeOutput(), this.getVolumeInput()]) {
+		const output = this.getVolumeOutput();
+		const input = this.getVolumeInput();
+
+		if (!output || !input) return;
+
+		for (const indicator of [output, input]) {
 			let percent = '';
 			let virtualMax = 0;
 			let muted = false;
@@ -145,12 +151,48 @@ export default class SoundPercentageExtension {
 	 * Enables the extension by adding percentage labels to both input and output indicators,
 	 * updating the volume, and connecting the event listeners.
 	 */
-	enable() {
-		[this.getVolumeOutput(), this.getVolumeInput()].forEach(indicator => {
-			this.addPercentageLabel(indicator);
-		});
-		this.updateVolume();
-		this.connect();
+		enable() {
+		let retries = 0;
+		const MAX_RETRIES = 10;
+		const RETRY_DELAY_MS = 100;
+
+		const tryEnable = () => {
+			const output = this.getVolumeOutput();
+			const input = this.getVolumeInput();
+
+			if (output && input) {
+				if (this._enableTimeoutId) {
+					GLib.Source.remove(this._enableTimeoutId);
+					this._enableTimeoutId = undefined;
+				}
+
+				[output, input].forEach(indicator => {
+					this.addPercentageLabel(indicator);
+				});
+				this.updateVolume();
+				this.connect();
+				return false;
+			}
+
+			if (retries < MAX_RETRIES) {
+				retries++;
+				this._enableTimeoutId = GLib.timeout_add(
+					GLib.PRIORITY_DEFAULT,
+					RETRY_DELAY_MS,
+					tryEnable
+				);
+				return false;
+			} else {
+				console.warn('Sound Percentage: Could not find volume indicators after retries.');
+				if (this._enableTimeoutId) {
+					GLib.Source.remove(this._enableTimeoutId);
+					this._enableTimeoutId = undefined;
+				}
+				return false;
+			}
+		};
+
+		tryEnable();
 	}
 
 
@@ -159,9 +201,19 @@ export default class SoundPercentageExtension {
 	 * from both input and output indicators.
 	 */
 	disable() {
+		if (this._enableTimeoutId) {
+			GLib.Source.remove(this._enableTimeoutId);
+			this._enableTimeoutId = undefined;
+		}
+
 		this.disconnect();
-		[this.getVolumeOutput(), this.getVolumeInput()].forEach(indicator => {
-			this.removePercentageLabel(indicator);
+		const output = this.getVolumeOutput();
+		const input = this.getVolumeInput();
+
+		[output, input].forEach(indicator => {
+			if (indicator && indicator._percentageLabel) {
+				this.removePercentageLabel(indicator);
+			}
 		});
 	}
 }
