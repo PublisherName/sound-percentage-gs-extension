@@ -14,10 +14,10 @@ uv sync
 
 2. Build a zip
 ```bash
-./build-a-zip.sh
+./build.sh
 ```
 
 3. Check the zip
 ```bash
-uv run sound-percentage@maestroschan.fr.zip
+uv run shexli sound-percentage@maestroschan.fr.zip
 ```
